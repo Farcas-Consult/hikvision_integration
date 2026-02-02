@@ -68,11 +68,14 @@ try
     var syncService = host.Services.GetRequiredService<ISyncService>();
     var result = await syncService.RunSyncAsync();
 
-    logger.LogInformation(
-        "Sync finished: {Total} total, {Synced} synced, {Skipped} skipped, {Failed} failed",
-        result.TotalMembers, result.Synced, result.Skipped, result.Failed);
+    if (logger.IsEnabled(LogLevel.Information))
+    {
+        logger.LogInformation(
+            "Sync finished: {Total} total, {Synced} synced, {Skipped} skipped, {Failed} failed",
+            result.TotalMembers, result.Synced, result.Skipped, result.Failed);
+    }
 
-    if (result.Errors.Count > 0)
+    if (result.Errors.Count > 0 && logger.IsEnabled(LogLevel.Warning))
     {
         foreach (var err in result.Errors)
             logger.LogWarning("Error: {Error}", err);
