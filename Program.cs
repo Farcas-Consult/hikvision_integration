@@ -6,13 +6,25 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using DotNetEnv;
 
-// Load .env file if it exists
-Env.Load();
+// Use exe directory as content root (important when running as Windows Service)
+var contentRoot = AppContext.BaseDirectory;
+if (File.Exists(Path.Combine(contentRoot, ".env")))
+{
+    Env.Load(Path.Combine(contentRoot, ".env"));
+}
+else if (File.Exists(".env"))
+{
+    Env.Load();
+}
 
 var host = Host.CreateDefaultBuilder(args)
+    .UseContentRoot(contentRoot)
+    .UseWindowsService(options =>
+    {
+        options.ServiceName = "Hikvision Sync Service";
+    })
     .ConfigureAppConfiguration((context, config) =>
     {
-        // Configuration priority: appsettings.json -> appsettings.{Environment}.json -> Environment Variables
         config.AddEnvironmentVariables();
     })
     .ConfigureServices((context, services) =>
@@ -33,6 +45,7 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddSingleton<ISyncStateStore, FileSyncStateStore>();
         services.AddSingleton<IHikvisionApiService, HikvisionApiService>();
         services.AddSingleton<ISyncService, SyncService>();
+        services.AddHostedService<SyncWorker>();
     })
     .Build();
 
@@ -62,27 +75,8 @@ static void ValidateConfiguration(SyncOptions options)
 }
 
 var logger = host.Services.GetRequiredService<ILogger<Program>>();
+logger.LogInformation("Hikvision Sync Service starting");
 
-try
-{
-    var syncService = host.Services.GetRequiredService<ISyncService>();
-    var result = await syncService.RunSyncAsync();
+await host.RunAsync();
 
-    if (logger.IsEnabled(LogLevel.Information))
-    {
-        logger.LogInformation(
-            "Sync finished: {Total} total, {Synced} synced, {Skipped} skipped, {Failed} failed",
-            result.TotalMembers, result.Synced, result.Skipped, result.Failed);
-    }
-
-    if (result.Errors.Count > 0 && logger.IsEnabled(LogLevel.Warning))
-    {
-        foreach (var err in result.Errors)
-            logger.LogWarning("Error: {Error}", err);
-    }
-}
-catch (Exception ex)
-{
-    logger.LogError(ex, "Sync failed");
-    Environment.Exit(1);
-}
+logger.LogInformation("Hikvision Sync Service stopped");
