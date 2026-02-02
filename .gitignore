@@ -3,8 +3,12 @@
 ##
 ## Get latest from `dotnet new gitignore`
 
-# dotenv files
+# Environment files
 .env
+.env.local
+
+# Sync state
+sync-state.json
 
 # User-specific files
 *.rsuser

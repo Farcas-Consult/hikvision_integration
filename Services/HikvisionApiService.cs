@@ -1,6 +1,7 @@
 using System.Text.Json;
 using hikvision_integration.Configuration;
 using hikvision_integration.Models;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using RestSharp;
 using RestSharp.Authenticators.Digest;
@@ -10,15 +11,28 @@ namespace hikvision_integration.Services;
 public class HikvisionApiService : IHikvisionApiService
 {
     private readonly HikvisionOptions _options;
+    private readonly ILogger<HikvisionApiService> _logger;
+    private readonly RestClient _restClient;
+    
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        PropertyNameCaseInsensitive = true
+        PropertyNameCaseInsensitive = true,
+        WriteIndented = false
     };
 
-    public HikvisionApiService(IOptions<SyncOptions> options)
+    public HikvisionApiService(IOptions<SyncOptions> options, ILogger<HikvisionApiService> logger)
     {
         _options = options.Value.Hikvision;
+        _logger = logger;
+        
+        // Create a reusable RestClient with digest auth
+        var clientOptions = new RestClientOptions
+        {
+            Authenticator = new DigestAuthenticator(_options.Username, _options.Password),
+            ThrowOnAnyError = false,
+            Timeout = TimeSpan.FromSeconds(30)
+        };
+        _restClient = new RestClient(clientOptions);
     }
 
     public async Task SyncUserAsync(HikvisionUserInfo userInfo, CancellationToken cancellationToken = default)
@@ -40,27 +54,26 @@ public class HikvisionApiService : IHikvisionApiService
     private async Task SyncUserToReaderAsync(string baseUrl, HikvisionUserInfo userInfo, CancellationToken cancellationToken = default)
     {
         var url = $"{baseUrl.TrimEnd('/')}/ISAPI/AccessControl/UserInfo/SetUp?format=json";
-
-        var options = new RestClientOptions(url)
-        {
-            Authenticator = new DigestAuthenticator(_options.Username, _options.Password)
-        };
-
-        var client = new RestClient(options);
         var payload = new HikvisionUserInfoRequest { UserInfo = userInfo };
         var body = JsonSerializer.Serialize(payload, JsonOptions);
 
-        var request = new RestRequest()
+        _logger.LogDebug("Syncing user {EmployeeNo} ({Name}) to {Url}", 
+            userInfo.EmployeeNo, userInfo.Name, baseUrl);
+
+        var request = new RestRequest(url, Method.Put)
             .AddStringBody(body, DataFormat.Json)
             .AddHeader("Content-Type", "application/json");
 
-        var response = await client.PutAsync(request, cancellationToken);
+        var response = await _restClient.ExecuteAsync(request, cancellationToken);
 
         if (!response.IsSuccessful)
         {
-            throw new HttpRequestException(
-                $"Hikvision API failed for {baseUrl}: {response.StatusCode} - {response.Content}");
+            var errorMsg = $"Hikvision API failed for {baseUrl}: {response.StatusCode} - {response.ErrorMessage ?? response.Content}";
+            _logger.LogError(errorMsg);
+            throw new HttpRequestException(errorMsg);
         }
+
+        _logger.LogDebug("Successfully synced user {EmployeeNo} to {Url}", userInfo.EmployeeNo, baseUrl);
     }
 
     private string GetBaseUrl()
