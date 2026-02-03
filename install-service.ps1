@@ -14,7 +14,7 @@
 $ErrorActionPreference = "Stop"
 $ServiceName = "HikvisionSyncService"
 $DisplayName = "Hikvision Sync Service"
-$Description = "Syncs gym members from the gym system to Hikvision access control readers every 3 minutes."
+$Description = "Syncs gym members from the gym system to Hikvision access control readers every 1 minute."
 
 # Default install path - change if needed
 $InstallPath = "C:\Services\HikvisionSync"
@@ -91,7 +91,7 @@ if ($service -and $service.Status -eq "Running") {
     Write-Host "Install Path: $publishPath"
     Write-Host "Status: $($service.Status)"
     Write-Host ""
-    Write-Host "The service will sync gym members to Hikvision every 3 minutes."
+    Write-Host "The service will sync gym members to Hikvision every 1 minute."
     Write-Host "View logs: Event Viewer -> Windows Logs -> Application"
     Write-Host "Or run: Get-EventLog -LogName Application -Source .NET Runtime -Newest 50"
 } else {

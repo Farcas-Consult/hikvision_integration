@@ -4,8 +4,8 @@ public class SyncOptions
 {
     public const string SectionName = "Sync";
 
-    /// <summary>Interval between sync cycles in minutes (default: 3).</summary>
-    public int SyncIntervalMinutes { get; set; } = 3;
+    /// <summary>Interval between sync cycles in minutes (default: 1).</summary>
+    public int SyncIntervalMinutes { get; set; } = 1;
 
     public GymOptions Gym { get; set; } = new();
     public HikvisionOptions Hikvision { get; set; } = new();
