@@ -76,6 +76,99 @@ public class HikvisionApiService : IHikvisionApiService
         _logger.LogDebug("Successfully synced user {EmployeeNo} to {Url}", userInfo.EmployeeNo, baseUrlNormalized);
     }
 
+    public async Task<HashSet<string>> FetchReaderUserIdsAsync(CancellationToken cancellationToken = default)
+    {
+        var readerUrls = GetReaderUrls().ToList();
+
+        if (readerUrls.Count == 0)
+            return [];
+
+        HashSet<string>? intersection = null;
+
+        foreach (var baseUrl in readerUrls)
+        {
+            try
+            {
+                var ids = await FetchUserIdsFromReaderAsync(baseUrl, cancellationToken);
+                intersection = intersection is null
+                    ? ids
+                    : new HashSet<string>(intersection.Intersect(ids), StringComparer.OrdinalIgnoreCase);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to fetch users from reader {Url}, will force re-sync of all", baseUrl);
+                return []; // Empty = assume all need sync (safe when fetch fails)
+            }
+        }
+
+        _logger.LogInformation("Fetched {Count} user IDs present on all reader(s)", intersection?.Count ?? 0);
+        return intersection ?? [];
+    }
+
+    private async Task<HashSet<string>> FetchUserIdsFromReaderAsync(string baseUrl, CancellationToken cancellationToken)
+    {
+        var baseUrlNormalized = baseUrl.TrimEnd('/');
+        var requestPath = "/ISAPI/AccessControl/UserInfo/Search?format=json";
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var position = 0;
+        const int pageSize = 500;
+
+        var clientOptions = new RestClientOptions(baseUrlNormalized)
+        {
+            Authenticator = new DigestAuthenticator(_options.Username, _options.Password),
+            ThrowOnAnyError = false,
+            Timeout = TimeSpan.FromSeconds(60)
+        };
+
+        using var client = new RestClient(clientOptions);
+
+        while (true)
+        {
+            var searchRequest = new HikvisionUserInfoSearchRequest
+            {
+                SearchCond = new UserInfoSearchCond
+                {
+                    SearchId = Guid.NewGuid().ToString("N"),
+                    SearchResultPosition = position,
+                    MaxResults = pageSize
+                }
+            };
+            var body = JsonSerializer.Serialize(searchRequest, JsonOptions);
+
+            var request = new RestRequest(requestPath, Method.Post)
+                .AddStringBody(body, DataFormat.Json)
+                .AddHeader("Content-Type", "application/json");
+
+            var response = await client.ExecuteAsync(request, cancellationToken);
+
+            if (!response.IsSuccessful || string.IsNullOrEmpty(response.Content))
+            {
+                _logger.LogWarning("UserInfo Search failed: {StatusCode} - {Content}", response.StatusCode, response.Content);
+                throw new HttpRequestException($"UserInfo Search failed: {response.StatusCode}");
+            }
+
+            var searchResponse = JsonSerializer.Deserialize<HikvisionUserInfoSearchResponse>(response.Content!, JsonOptions);
+            var userList = searchResponse?.SearchResult?.UserInfo;
+
+            if (userList is null or { Count: 0 })
+                break;
+
+            foreach (var user in userList)
+            {
+                if (!string.IsNullOrWhiteSpace(user.EmployeeNo))
+                    ids.Add(user.EmployeeNo);
+            }
+
+            var totalMatch = searchResponse?.SearchResult?.TotalMatchNum ?? 0;
+            position += userList.Count;
+
+            if (position >= totalMatch || userList.Count < pageSize)
+                break;
+        }
+
+        return ids;
+    }
+
     private string GetBaseUrl()
     {
         if (_options.ReaderUrls.Count > 0)

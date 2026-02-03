@@ -46,6 +46,17 @@ public class SyncService : ISyncService
 
         _logger.LogInformation("Found {Count} members in gym system", members.Count);
 
+        HashSet<string> readerUserIds;
+        try
+        {
+            readerUserIds = await _hikvisionApi.FetchReaderUserIdsAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch users from reader, will force re-sync of all");
+            readerUserIds = []; // Empty = sync everyone
+        }
+
         foreach (var member in members)
         {
             if (string.IsNullOrWhiteSpace(member.TurnstileId))
@@ -57,8 +68,11 @@ public class SyncService : ISyncService
 
             var fingerprint = ComputeFingerprint(member);
             var lastFingerprint = await _stateStore.GetLastFingerprintAsync(member.TurnstileId, cancellationToken);
+            var existsOnReader = readerUserIds.Contains(member.TurnstileId);
 
-            if (lastFingerprint == fingerprint)
+            // Only skip if: user exists on reader AND our fingerprint matches (no changes)
+            // If user was deleted from reader, force re-sync regardless of fingerprint
+            if (existsOnReader && lastFingerprint == fingerprint)
             {
                 skipped++;
                 continue;
