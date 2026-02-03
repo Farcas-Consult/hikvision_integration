@@ -48,15 +48,15 @@ public class SyncService : ISyncService
 
         foreach (var member in members)
         {
-            if (string.IsNullOrWhiteSpace(member.MemberId))
+            if (string.IsNullOrWhiteSpace(member.TurnstileId))
             {
-                _logger.LogWarning("Skipping member with empty MemberId: {Name}", member.FullName);
+                _logger.LogDebug("Skipping member without TurnstileId: {MemberId} ({Name})", member.MemberId, member.FullName);
                 skipped++;
                 continue;
             }
 
             var fingerprint = ComputeFingerprint(member);
-            var lastFingerprint = await _stateStore.GetLastFingerprintAsync(member.MemberId, cancellationToken);
+            var lastFingerprint = await _stateStore.GetLastFingerprintAsync(member.TurnstileId, cancellationToken);
 
             if (lastFingerprint == fingerprint)
             {
@@ -69,13 +69,13 @@ public class SyncService : ISyncService
             try
             {
                 await _hikvisionApi.SyncUserToAllReadersAsync(userInfo, cancellationToken);
-                await _stateStore.SetLastFingerprintAsync(member.MemberId, fingerprint, cancellationToken);
+                await _stateStore.SetLastFingerprintAsync(member.TurnstileId, fingerprint, cancellationToken);
                 synced++;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to sync member {MemberId} ({Name})", member.MemberId, member.FullName);
-                errors.Add($"{member.MemberId}: {ex.Message}");
+                _logger.LogError(ex, "Failed to sync member TurnstileId={TurnstileId} ({Name})", member.TurnstileId, member.FullName);
+                errors.Add($"TurnstileId {member.TurnstileId}: {ex.Message}");
                 failed++;
             }
         }
@@ -95,7 +95,7 @@ public class SyncService : ISyncService
         var enable = valid?.Enable ?? m.IsActive;
         var begin = valid?.BeginTime ?? "";
         var end = valid?.EndTime ?? "";
-        var payload = $"{m.MemberId}|{m.FullName}|{enable}|{begin}|{end}";
+        var payload = $"{m.TurnstileId}|{m.FullName}|{enable}|{begin}|{end}";
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(payload));
         return Convert.ToHexString(bytes);
     }
@@ -107,7 +107,7 @@ public class SyncService : ISyncService
 
         return new HikvisionUserInfo
         {
-            EmployeeNo = m.MemberId,
+            EmployeeNo = m.TurnstileId!,
             Name = m.FullName,
             UserType = "normal",
             Valid = new HikvisionValid
