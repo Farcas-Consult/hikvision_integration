@@ -4,6 +4,7 @@ namespace hikvision_integration.Models;
 
 /// <summary>
 /// Request payload for Hikvision ISAPI AccessControl UserInfo SetUp
+/// todo: document error messages for myself.
 /// </summary>
 public class HikvisionUserInfoRequest
 {

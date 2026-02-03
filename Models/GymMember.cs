@@ -20,6 +20,7 @@ public class GymMember
     public string MembershipStatus { get; set; } = string.Empty;
 
     [JsonPropertyName("turnstileId")]
+    [JsonConverter(typeof(FlexibleStringConverter))]
     public string? TurnstileId { get; set; }
 
     [JsonPropertyName("memberId")]
